@@ -51,10 +51,13 @@
   </template>
   
   <script>
-  import { defineComponent, ref, onMounted, nextTick } from 'vue'
-  import { PDFDocument, rgb, degrees } from 'pdf-lib'
-  import * as pdfjsLib from 'pdfjs-dist'
+import { defineComponent, ref, onMounted } from 'vue'
+import { PDFDocument, rgb, degrees } from 'pdf-lib'
+import * as pdfjsLib from 'pdfjs-dist'
+import axios from 'axios'
   
+const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000/api'
+
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js'
 
 
@@ -92,24 +95,35 @@
       }
   
       const createVote = async () => {
-        if (newVoteTitle.value.trim() && selectedFile.value) {
-          const reader = new FileReader()
-          reader.onload = async (e) => {
-            const pdfBytes = new Uint8Array(e.target.result)
-            const newVote = {
-              id: Date.now(),
-              title: newVoteTitle.value.trim(),
-              pdfBytes: pdfBytes
+      if (newVoteTitle.value.trim() && selectedFile.value) {
+        try {
+          // 首先上傳 PDF
+          const formData = new FormData();
+          formData.append('pdf', selectedFile.value);
+          const uploadResponse = await axios.post(`${API_URL}/upload-pdf`, formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
             }
-            votes.value.push(newVote)
-            newVoteTitle.value = ''
-            selectedFile.value = null
-            isCreatingVote.value = false
-          }
-          reader.readAsArrayBuffer(selectedFile.value)
+          });
+
+          // 創建新的投票，包含 PDF 文件信息
+          const newVote = {
+            id: Date.now(),
+            title: newVoteTitle.value.trim(),
+            pdfFilename: uploadResponse.data.filename
+          };
+
+          const voteResponse = await axios.post(`${API_URL}/votes`, newVote);
+          votes.value.push(voteResponse.data);
+          newVoteTitle.value = '';
+          selectedFile.value = null;
+          isCreatingVote.value = false;
+        } catch (error) {
+          console.error('創建投票失敗:', error);
         }
       }
-  
+    };
+    
       const cancelCreateVote = () => {
         isCreatingVote.value = false
         newVoteTitle.value = ''
