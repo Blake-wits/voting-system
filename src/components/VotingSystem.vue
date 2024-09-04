@@ -58,7 +58,7 @@ import axios from 'axios'
   
 const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000/api'
 
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js'
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
 
 
   export default defineComponent({
