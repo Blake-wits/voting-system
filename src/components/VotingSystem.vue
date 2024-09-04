@@ -51,7 +51,7 @@
   </template>
   
   <script>
-import { defineComponent, ref, onMounted } from 'vue'
+import { defineComponent, ref, onMounted, nextTick } from 'vue'
 import { PDFDocument, rgb, degrees } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
 import axios from 'axios'
@@ -123,69 +123,82 @@ const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000/api'
         }
       }
     };
-    
+
       const cancelCreateVote = () => {
         isCreatingVote.value = false
         newVoteTitle.value = ''
         selectedFile.value = null
       }
   
-      const viewPdf = async (voteId) => {
-      pdfError.value = ''
-      const vote = votes.value.find(v => v.id === voteId)
-      if (vote && vote.pdfBytes) {
-        try {
-          console.log('開始處理 PDF')
-          pdfDoc.value = await PDFDocument.load(vote.pdfBytes)
-          console.log('PDF 載入成功')
-          const pages = pdfDoc.value.getPages()
-          totalPages.value = pages.length
-          console.log(`PDF 頁數: ${totalPages.value}`)
-          
-          pages.forEach((page, index) => {
-            const { width, height } = page.getSize()
-            console.log(`第 ${index + 1} 頁尺寸: ${width}x${height}`)
-            
-            // 設置浮水印參數
-            const watermarkText = nickname.value
-            const fontSize = 20
-            const opacity = 0.1
-            const rotationAngle = 45
-            
-            // 計算浮水印的間距
-            const spacingX = 150
-            const spacingY = 150
-            
-            // 在整個頁面上重複添加浮水印
-            for (let y = 0; y < height; y += spacingY) {
-              for (let x = 0; x < width; x += spacingX) {
-                page.drawText(watermarkText, {
-                  x: x,
-                  y: y,
-                  size: fontSize,
-                  color: rgb(0.95, 0.1, 0.1),
-                  opacity: opacity,
-                  rotate: degrees(rotationAngle),
-                })
-              }
-            }
-          })
-          
-          console.log('浮水印添加完成')
-          viewingPdf.value = true
-          currentPdfId.value = voteId
-          currentPage.value = 1
-          await nextTick()
-          renderPage()
-        } catch (error) {
-          console.error('PDF處理錯誤:', error)
-          pdfError.value = `PDF 預覽出現錯誤: ${error.message}`
+      const fetchVotes = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/votes`);
+    votes.value = response.data;
+  } catch (error) {
+    console.error('獲取投票列表失敗:', error);
+  }
+};
+const viewPdf = async (voteId) => {
+  pdfError.value = ''
+  const vote = votes.value.find(v => v.id === voteId)
+  if (vote && vote.pdfFilename) {
+    try {
+      console.log('開始獲取 PDF')
+      const response = await axios.get(`${API_URL}/pdf/${vote.pdfFilename}`, { 
+        responseType: 'arraybuffer' 
+      })
+      const pdfBytes = new Uint8Array(response.data)
+      
+      console.log('開始處理 PDF')
+      pdfDoc.value = await PDFDocument.load(pdfBytes)
+      console.log('PDF 載入成功')
+      const pages = pdfDoc.value.getPages()
+      totalPages.value = pages.length
+      console.log(`PDF 頁數: ${totalPages.value}`)
+      
+      pages.forEach((page, index) => {
+        const { width, height } = page.getSize()
+        console.log(`第 ${index + 1} 頁尺寸: ${width}x${height}`)
+        
+        // 設置浮水印參數
+        const watermarkText = nickname.value
+        const fontSize = 20
+        const opacity = 0.1
+        const rotationAngle = 45
+        
+        // 計算浮水印的間距
+        const spacingX = 150
+        const spacingY = 150
+        
+        // 在整個頁面上重複添加浮水印
+        for (let y = 0; y < height; y += spacingY) {
+          for (let x = 0; x < width; x += spacingX) {
+            page.drawText(watermarkText, {
+              x: x,
+              y: y,
+              size: fontSize,
+              color: rgb(0.95, 0.1, 0.1),
+              opacity: opacity,
+              rotate: degrees(rotationAngle),
+            })
+          }
         }
-      } else {
-        pdfError.value = '找不到對應的 PDF 文件'
-      }
+      })
+      
+      console.log('浮水印添加完成')
+      viewingPdf.value = true
+      currentPdfId.value = voteId
+      currentPage.value = 1
+      await nextTick()
+      renderPage()
+    } catch (error) {
+      console.error('PDF處理錯誤:', error)
+      pdfError.value = `PDF 預覽出現錯誤: ${error.message}`
     }
-  
+  } else {
+    pdfError.value = '找不到對應的 PDF 文件'
+  }
+}  
       const renderPage = async () => {
         if (!pdfDoc.value) return
   
@@ -251,8 +264,8 @@ const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000/api'
       }
   
       onMounted(() => {
-        // 在實際應用中，這裡可能會從服務器加載投票列表
-      })
+  fetchVotes(); // 在組件掛載時獲取投票列表
+})
   
       return {
         nickname,
