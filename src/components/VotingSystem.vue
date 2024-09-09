@@ -277,8 +277,113 @@ export default defineComponent({
     }
 
     const viewPdf = async (voteId) => {
-      // PDF 預覽邏輯保持不變
+  pdfError.value = ''
+  const vote = votes.value.find(v => v.id === voteId)
+  if (vote && vote.pdfFilename) {
+    try {
+      console.log('開始獲取 PDF')
+      const response = await axios.get(`${API_URL}/pdf/${vote.pdfFilename}`, { 
+        responseType: 'arraybuffer' 
+      })
+      const pdfBytes = new Uint8Array(response.data)
+      
+      console.log('開始處理 PDF')
+      pdfDoc.value = await PDFDocument.load(pdfBytes)
+      console.log('PDF 載入成功')
+      const pages = pdfDoc.value.getPages()
+      totalPages.value = pages.length
+      console.log(`PDF 頁數: ${totalPages.value}`)
+      
+      // 處理每一頁
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i]
+        const { width, height } = page.getSize()
+        console.log(`第 ${i + 1} 頁尺寸: ${width}x${height}`)
+        
+        // 處理3D注釋和添加浮水印的邏輯將移至 renderPage 函數
+      }
+      
+      console.log('PDF 處理完成')
+      viewingPdf.value = true
+      currentPdfId.value = voteId
+      currentPage.value = 1
+      await nextTick()
+      renderPage()
+    } catch (error) {
+      console.error('PDF處理錯誤:', error)
+      pdfError.value = `PDF 預覽出現錯誤: ${error.message}`
     }
+  } else {
+    pdfError.value = '找不到對應的 PDF 文件'
+  }
+}
+
+const renderPage = async () => {
+  if (!pdfDoc.value) return
+
+  try {
+    const pdfBytes = await pdfDoc.value.save()
+    const loadingTask = pdfjsLib.getDocument({ data: pdfBytes })
+    const pdf = await loadingTask.promise
+    const page = await pdf.getPage(currentPage.value)
+    const scale = 1.5
+    const viewport = page.getViewport({ scale })
+
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    canvas.height = viewport.height
+    canvas.width = viewport.width
+
+    // 渲染頁面到 canvas
+    await page.render({ canvasContext: context, viewport }).promise
+
+    // 處理3D注釋
+    const annotations = await page.getAnnotations()
+    // for (const annotation of annotations) {
+    //   if (annotation.subtype === '3D') {
+    //     // 這裡我們只是繪製一個佔位符，實際應用中可能需要更複雜的3D到2D轉換
+    //     context.fillStyle = 'lightgray'
+    //     context.fillRect(
+    //       annotation.rect[0], 
+    //       viewport.height - annotation.rect[3], 
+    //       annotation.rect[2] - annotation.rect[0], 
+    //       annotation.rect[3] - annotation.rect[1]
+    //     )
+    //     context.fillStyle = 'black'
+    //     context.font = '12px Arial'
+    //     context.fillText('3D content placeholder', annotation.rect[0], viewport.height - annotation.rect[1])
+    //   }
+    // }
+
+    // 添加浮水印
+    const watermarkText = nickname.value
+    context.font = 'Bold 48px Arial'
+    context.fillStyle = 'rgba(255,0,0,0.1)'
+    context.textAlign = 'center'
+    context.textBaseline = 'middle'
+
+    for (let y = 0; y < viewport.height; y += 150) {
+      for (let x = 0; x < viewport.width; x += 150) {
+        context.save()
+        context.translate(x, y)
+        context.rotate(Math.PI / 4)
+        context.fillText(watermarkText, 0, 0)
+        context.restore()
+      }
+    }
+
+    const pdfPreviewElement = pdfPreview.value
+    if (pdfPreviewElement) {
+      pdfPreviewElement.innerHTML = ''
+      pdfPreviewElement.appendChild(canvas)
+    } else {
+      console.error('PDF 預覽容器未找到')
+    }
+  } catch (error) {
+    console.error('渲染 PDF 頁面時出錯:', error)
+    pdfError.value = `渲染 PDF 頁面時出錯: ${error.message}`
+  }
+}
 
     const view3dModel = async (voteId) => {
   debugInfo.value = '開始載入 3D 模型...'
