@@ -297,6 +297,8 @@ export default defineComponent({
     const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     
+        // 設置背景為白色
+        renderer.setClearColor(0xffffff, 1)
     renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
     modelContainer.value.appendChild(renderer.domElement)
     debugInfo.value = '場景已設置，開始載入模型...'
@@ -345,7 +347,7 @@ export default defineComponent({
     canvas.width = 512
     canvas.height = 512
     context.font = 'Bold 48px Arial'
-    context.fillStyle = 'rgba(255,255,255,0.3)'
+    context.fillStyle = 'rgba(0,0,0,0.1)'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
     
