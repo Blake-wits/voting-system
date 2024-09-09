@@ -13,14 +13,15 @@
       <p>歡迎，{{ nickname }}!</p>
       
       <!-- 投票列表 -->
-      <div v-if="!isCreatingVote && !viewingPdf && !viewingVoteDetails" class="vote-list">
+      <div v-if="!isCreatingVote && !viewingPdf && !viewing3dModel && !viewingVoteDetails" class="vote-list">
         <h2>當前投票</h2>
         <ul>
           <li v-for="vote in votes" :key="vote.id" class="vote-item">
             <div class="vote-title">{{ vote.title }}</div>
             <div class="vote-count">票數: {{ vote.totalVotes }}</div>
             <div class="vote-actions">
-              <button @click="viewPdf(vote.id)">查看 PDF</button>
+              <button @click="viewPdf(vote.id)" v-if="vote.pdfFilename">查看 PDF</button>
+              <button @click="viewObj(vote.id)" v-if="vote.objFilename">查看 3D 模型</button>
               <button @click="viewVoteDetails(vote.id)">詳細資訊</button>
               <button 
                 v-if="!hasVoted(vote.id)" 
@@ -44,14 +45,21 @@
       <div v-if="isCreatingVote" class="create-vote">
         <h2>建立新投票</h2>
         <input v-model="newVoteTitle" placeholder="投票標題" />
-        <input type="file" @change="handleFileUpload" accept="application/pdf" />
+        <div>
+          <label>上傳 PDF 文件 (選填):</label>
+          <input type="file" @change="handlePdfUpload" accept="application/pdf" />
+        </div>
+        <div>
+          <label>上傳 OBJ 文件 (選填):</label>
+          <input type="file" @change="handleObjUpload" accept=".obj" />
+        </div>
         <div v-for="(option, index) in newVoteOptions" :key="index" class="option-input">
           <input v-model="option.text" placeholder="選項內容" />
           <input v-model="option.reason" placeholder="選項理由" />
           <button @click="removeOption(index)">移除選項</button>
         </div>
         <button @click="addOption">新增選項</button>
-        <button @click="createVote" :disabled="!newVoteTitle || !selectedFile || newVoteOptions.length === 0">確認建立</button>
+        <button @click="createVote" :disabled="!newVoteTitle || newVoteOptions.length === 0">確認建立</button>
         <button @click="cancelCreateVote">取消</button>
       </div>
       
@@ -82,6 +90,28 @@
         <button @click="closePreview">關閉預覽</button>
       </div>
 
+      <div v-if="viewing3dModel" class="model-preview">
+        <h2>3D 模型預覽</h2>
+        <div ref="modelContainer" class="model-container"></div>
+        <div class="model-controls">
+          <div class="control-group">
+            <button @click="setControlMode('orbit')" :class="{ active: controlMode === 'orbit' }">軌道控制</button>
+            <button @click="setControlMode('pan')" :class="{ active: controlMode === 'pan' }">平移</button>
+            <button @click="setControlMode('zoom')" :class="{ active: controlMode === 'zoom' }">縮放</button>
+          </div>
+          <div class="control-group">
+            <button @click="resetView">重置視圖</button>
+            <button @click="toggleWireframe">切換線框模式</button>
+          </div>
+        </div>
+        <div class="camera-info">
+          相機位置: X: {{ cameraPosition.x }}, Y: {{ cameraPosition.y }}, Z: {{ cameraPosition.z }}
+        </div>
+        <div v-if="modelError" class="error-message">{{ modelError }}</div>
+        <div v-if="debugInfo" class="debug-info">{{ debugInfo }}</div>
+        <button @click="closeModelPreview" class="close-button">關閉預覽</button>
+      </div>
+
       <!-- 投票模態框 -->
       <div v-if="votingModalOpen" class="voting-modal">
         <h3>{{ currentVotingVote.title }}</h3>
@@ -104,6 +134,10 @@ import { defineComponent, ref, onMounted, nextTick } from 'vue'
 import { PDFDocument, rgb, degrees } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
 import axios from 'axios'
+import * as THREE from 'three'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader'
 
 const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000/api'
 
@@ -125,12 +159,15 @@ export default defineComponent({
     const isCreatingVote = ref(false)
     const newVoteTitle = ref('')
     const newVoteOptions = ref([])
-    const selectedFile = ref(null)
+    const selectedPdfFile = ref(null)
+    const selectedObjFile = ref(null)
     const viewingPdf = ref(false)
+    const viewing3dModel = ref(false)
     const viewingVoteDetails = ref(false)
     const currentVote = ref(null)
     const currentPdfId = ref(null)
     const pdfError = ref('')
+    const modelError = ref('')
     const pdfDoc = ref(null)
     const currentPage = ref(1)
     const totalPages = ref(0)
@@ -139,6 +176,11 @@ export default defineComponent({
     const selectedOption = ref(null)
     const voteReason = ref('')
     const userVotes = ref([])
+    const debugInfo = ref('');
+    const modelContainer = ref(null);
+    const cameraPosition = ref({ x: 0, y: 0, z: 5 });
+    const controlMode = ref('orbit');
+    let controls;
 
     const setNickname = () => {
       if (inputNickname.value.trim()) {
@@ -147,8 +189,12 @@ export default defineComponent({
       }
     }
 
-    const handleFileUpload = (event) => {
-      selectedFile.value = event.target.files[0]
+    const handlePdfUpload = (event) => {
+      selectedPdfFile.value = event.target.files[0]
+    }
+
+    const handleObjUpload = (event) => {
+      selectedObjFile.value = event.target.files[0]
     }
 
     const addOption = () => {
@@ -160,11 +206,16 @@ export default defineComponent({
     }
 
     const createVote = async () => {
-      if (newVoteTitle.value.trim() && selectedFile.value && newVoteOptions.value.length > 0) {
+      if (newVoteTitle.value.trim() && newVoteOptions.value.length > 0) {
         try {
           const formData = new FormData()
-          formData.append('pdf', selectedFile.value)
-          const uploadResponse = await axios.post(`${API_URL}/upload-pdf`, formData, {
+          if (selectedPdfFile.value) {
+            formData.append('pdf', selectedPdfFile.value)
+          }
+          if (selectedObjFile.value) {
+            formData.append('obj', selectedObjFile.value)
+          }
+          const uploadResponse = await axios.post(`${API_URL}/upload-files`, formData, {
             headers: {
               'Content-Type': 'multipart/form-data'
             }
@@ -172,7 +223,8 @@ export default defineComponent({
 
           const newVote = {
             title: newVoteTitle.value.trim(),
-            pdfFilename: uploadResponse.data.filename,
+            pdfFilename: uploadResponse.data.pdfFilename,
+            objFilename: uploadResponse.data.objFilename,
             options: newVoteOptions.value
           }
 
@@ -180,7 +232,8 @@ export default defineComponent({
           votes.value.push(voteResponse.data)
           newVoteTitle.value = ''
           newVoteOptions.value = []
-          selectedFile.value = null
+          selectedPdfFile.value = null
+          selectedObjFile.value = null
           isCreatingVote.value = false
         } catch (error) {
           console.error('創建投票失敗:', error)
@@ -192,7 +245,8 @@ export default defineComponent({
       isCreatingVote.value = false
       newVoteTitle.value = ''
       newVoteOptions.value = []
-      selectedFile.value = null
+      selectedPdfFile.value = null
+      selectedObjFile.value = null
     }
 
     const fetchVotes = async () => {
@@ -243,17 +297,14 @@ export default defineComponent({
             const { width, height } = page.getSize()
             console.log(`第 ${index + 1} 頁尺寸: ${width}x${height}`)
             
-            // 設置浮水印參數
             const watermarkText = nickname.value
             const fontSize = 20
             const opacity = 0.1
             const rotationAngle = 45
             
-            // 計算浮水印的間距
             const spacingX = 150
             const spacingY = 150
             
-            // 在整個頁面上重複添加浮水印
             for (let y = 0; y < height; y += spacingY) {
               for (let x = 0; x < width; x += spacingX) {
                 page.drawText(watermarkText, {
@@ -342,6 +393,163 @@ export default defineComponent({
       totalPages.value = 0
     }
 
+    const setControlMode = (mode) => {
+      controlMode.value = mode;
+      if (controls) {
+        switch (mode) {
+          case 'orbit':
+            controls.mouseButtons = {
+              LEFT: THREE.MOUSE.ROTATE,
+              MIDDLE: THREE.MOUSE.DOLLY,
+              RIGHT: THREE.MOUSE.PAN
+            };
+            break;
+          case 'pan':
+            controls.mouseButtons = {
+              LEFT: THREE.MOUSE.PAN,
+              MIDDLE: THREE.MOUSE.DOLLY,
+              RIGHT: THREE.MOUSE.ROTATE
+            };
+            break;
+          case 'zoom':
+            controls.mouseButtons = {
+              LEFT: THREE.MOUSE.DOLLY,
+              MIDDLE: THREE.MOUSE.DOLLY,
+              RIGHT: THREE.MOUSE.ROTATE
+            };
+            break;
+        }
+      }
+    };
+
+    const resetView = () => {
+      if (controls) {
+        controls.reset();
+      }
+    };
+
+    const toggleWireframe = () => {
+      if (controls) {
+        controls.object.traverse((child) => {
+          if (child.isMesh) {
+            child.material.wireframe = !child.material.wireframe;
+          }
+        });
+      }
+    };
+
+    const viewObj = async (voteId) => {
+  debugInfo.value = '開始載入 3D 模型...';
+  modelError.value = '';
+  viewing3dModel.value = true;
+  
+  await nextTick();
+  
+  if (!modelContainer.value) {
+    debugInfo.value = '模型容器未找到';
+    return;
+  }
+  debugInfo.value = '模型容器已找到，開始設置場景...';
+  try {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    
+    renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight);
+    modelContainer.value.appendChild(renderer.domElement);
+    debugInfo.value = '場景已設置，開始載入模型...';
+    const objLoader = new OBJLoader();
+    const vote = votes.value.find(v => v.id === voteId);
+    if (!vote || !vote.objFilename) {
+      throw new Error('找不到對應的 3D 模型檔案');
+    }
+    const response = await fetch(`${API_URL}/obj/${vote.objFilename}`);
+    const objText = await response.text();
+    const object = objLoader.parse(objText);
+    scene.add(object);
+    
+    debugInfo.value = '模型載入成功，添加到場景...';
+    // 調整相機位置
+    const box = new THREE.Box3().setFromObject(object);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = camera.fov * (Math.PI / 180);
+    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+    camera.position.z = cameraZ * 2;
+    camera.lookAt(center);
+    // 添加浮水印
+    const watermarkText = nickname.value; // 使用使用者暱稱作為浮水印
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 512;
+    canvas.height = 512;
+    context.font = 'Bold 48px Arial';
+    context.fillStyle = 'rgba(255,255,255,0.3)';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    
+    // 在多個位置繪製水印，形成重複模式
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 5; j++) {
+        context.fillText(watermarkText, i * 128, j * 128);
+      }
+    }
+    const watermarkTexture = new THREE.CanvasTexture(canvas);
+    const watermarkMaterial = new THREE.SpriteMaterial({ map: watermarkTexture, transparent: true });
+    const watermarkSprite = new THREE.Sprite(watermarkMaterial);
+    watermarkSprite.scale.set(maxDim, maxDim, 1);
+    watermarkSprite.position.set(center.x, center.y, center.z);
+    scene.add(watermarkSprite);
+    // 設置控制器
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.25;
+    controls.screenSpacePanning = false;
+    controls.maxPolarAngle = Math.PI / 2;
+    // 添加光源
+    const ambientLight = new THREE.AmbientLight(0x404040, 2);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(1, 1, 1);
+    scene.add(directionalLight);
+    // 渲染循環
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+      // 更新相機位置狀態
+      cameraPosition.value = {
+        x: camera.position.x.toFixed(2),
+        y: camera.position.y.toFixed(2),
+        z: camera.position.z.toFixed(2)
+      };
+    }
+    animate();
+    // 添加視窗大小調整事件
+    window.addEventListener('resize', onWindowResize, false);
+    function onWindowResize() {
+      camera.aspect = modelContainer.value.clientWidth / modelContainer.value.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight);
+    }
+    debugInfo.value = '3D 模型渲染完成，浮水印已添加';
+  } catch (error) {
+    console.error('3D 模型處理錯誤:', error);
+    modelError.value = `3D 模型預覽出現錯誤: ${error.message}`;
+    debugInfo.value = `錯誤詳情: ${error.stack}`;
+  }
+};
+
+    const closeModelPreview = () => {
+      viewing3dModel.value = false;
+      if (modelContainer.value) {
+        modelContainer.value.innerHTML = '';
+      }
+      debugInfo.value = '';
+    };
+
     const openVotingModal = (vote) => {
       currentVotingVote.value = vote
       votingModalOpen.value = true
@@ -395,17 +603,23 @@ export default defineComponent({
       isCreatingVote,
       newVoteTitle,
       newVoteOptions,
-      handleFileUpload,
+      handlePdfUpload,
+      handleObjUpload,
       createVote,
       cancelCreateVote,
       viewPdf,
+      viewObj,
       closePreview,
+      closeModelPreview,
       castVote: submitVote,
-      selectedFile,
+      selectedPdfFile,
+      selectedObjFile,
       viewingPdf,
+      viewing3dModel,
       viewingVoteDetails,
       currentVote,
       pdfError,
+      modelError,
       currentPage,
       totalPages,
       previousPage,
@@ -422,11 +636,19 @@ export default defineComponent({
       closeVotingModal,
       submitVote,
       hasVoted,
-      userVotes
+      userVotes,
+      modelContainer,
+      debugInfo,
+      cameraPosition,
+      controlMode,
+      setControlMode,
+      resetView,
+      toggleWireframe
     }
   }
 })
 </script>
+
 <style scoped>
 .voting-system {
   max-width: 800px;
@@ -462,10 +684,18 @@ button:disabled {
   cursor: not-allowed;
 }
 
-.pdf-preview {
+.pdf-preview, .model-preview {
   margin: 20px 0;
   border: 1px solid #ccc;
   padding: 10px;
+}
+
+.pdf-container, .model-container {
+  width: 100%;
+  height: 600px;
+  overflow: auto;
+  border: 1px solid #ccc;
+  margin-bottom: 10px;
 }
 
 ul {
@@ -512,14 +742,6 @@ ul {
   margin-top: 10px;
 }
 
-.pdf-container {
-  width: 100%;
-  height: 600px;
-  overflow: auto;
-  border: 1px solid #ccc;
-  margin-bottom: 10px;
-}
-
 .pdf-navigation {
   display: flex;
   justify-content: space-between;
@@ -551,6 +773,7 @@ ul {
   margin-top: 5px;
   font-style: italic;
 }
+
 .voting-modal {
   position: fixed;
   top: 50%;
@@ -574,5 +797,116 @@ ul {
 .voted-label {
   color: #888;
   font-style: italic;
+}
+
+.model-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.model-container {
+  width: 80%;
+  height: 80%;
+  background-color: #f0f0f0;
+}
+
+.debug-info {
+  color: white;
+  margin-top: 10px;
+  max-width: 80%;
+  word-wrap: break-word;
+}
+.model-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.model-container {
+  width: 80%;
+  height: 70%;
+  background-color: #f0f0f0;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.model-controls {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.control-group {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.model-controls button {
+  padding: 8px 15px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.3s, transform 0.1s;
+}
+
+.model-controls button:hover {
+  background-color: #45a049;
+  transform: translateY(-2px);
+}
+
+.model-controls button.active {
+  background-color: #357a38;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.camera-info {
+  margin-top: 10px;
+  color: white;
+  font-size: 14px;
+}
+
+.close-button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  padding: 10px 20px;
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.close-button:hover {
+  background-color: #d32f2f;
+}
+
+.error-message, .debug-info {
+  color: white;
+  margin-top: 10px;
+  max-width: 80%;
+  word-wrap: break-word;
 }
 </style>
