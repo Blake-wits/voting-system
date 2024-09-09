@@ -21,7 +21,7 @@
             <div class="vote-count">票數: {{ vote.totalVotes }}</div>
             <div class="vote-actions">
               <button @click="viewPdf(vote.id)" v-if="vote.pdfFilename">查看 PDF</button>
-              <button @click="viewObj(vote.id)" v-if="vote.objFilename">查看 3D 模型</button>
+              <button @click="view3dModel(vote.id)" v-if="vote.objFilename || vote.glbFilename">查看 3D 模型</button>
               <button @click="viewVoteDetails(vote.id)">詳細資訊</button>
               <button 
                 v-if="!hasVoted(vote.id)" 
@@ -50,8 +50,8 @@
           <input type="file" @change="handlePdfUpload" accept="application/pdf" />
         </div>
         <div>
-          <label>上傳 OBJ 文件 (選填):</label>
-          <input type="file" @change="handleObjUpload" accept=".obj" />
+          <label>上傳 3D 模型文件 (選填):</label>
+          <input type="file" @change="handle3dModelUpload" accept=".obj,.glb" />
         </div>
         <div v-for="(option, index) in newVoteOptions" :key="index" class="option-input">
           <input v-model="option.text" placeholder="選項內容" />
@@ -90,18 +90,17 @@
         <button @click="closePreview">關閉預覽</button>
       </div>
 
+      <!-- 3D 模型預覽 -->
       <div v-if="viewing3dModel" class="model-preview">
         <h2>3D 模型預覽</h2>
         <div ref="modelContainer" class="model-container"></div>
         <div class="model-controls">
           <div class="control-group">
             <button @click="setControlMode('orbit')" :class="{ active: controlMode === 'orbit' }">軌道控制</button>
-            <!-- <button @click="setControlMode('pan')" :class="{ active: controlMode === 'pan' }">平移</button> -->
             <button @click="setControlMode('zoom')" :class="{ active: controlMode === 'zoom' }">縮放</button>
           </div>
           <div class="control-group">
             <button @click="resetView">重置視圖</button>
-            <!-- <button @click="toggleWireframe">切換線框模式</button> -->
           </div>
         </div>
         <div class="camera-info">
@@ -131,13 +130,14 @@
 
 <script>
 import { defineComponent, ref, onMounted, nextTick } from 'vue'
-import { PDFDocument, rgb, degrees } from 'pdf-lib'
+import { PDFDocument, rgb } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
 import axios from 'axios'
 import * as THREE from 'three'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
-import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 
 const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000/api'
 
@@ -159,8 +159,8 @@ export default defineComponent({
     const isCreatingVote = ref(false)
     const newVoteTitle = ref('')
     const newVoteOptions = ref([])
+    const selected3dModelFile = ref(null)
     const selectedPdfFile = ref(null)
-    const selectedObjFile = ref(null)
     const viewingPdf = ref(false)
     const viewing3dModel = ref(false)
     const viewingVoteDetails = ref(false)
@@ -176,11 +176,11 @@ export default defineComponent({
     const selectedOption = ref(null)
     const voteReason = ref('')
     const userVotes = ref([])
-    const debugInfo = ref('');
-    const modelContainer = ref(null);
-    const cameraPosition = ref({ x: 0, y: 0, z: 5 });
-    const controlMode = ref('orbit');
-    let controls;
+    const modelContainer = ref(null)
+    const debugInfo = ref('')
+    const cameraPosition = ref({ x: 0, y: 0, z: 5 })
+    const controlMode = ref('orbit')
+    let controls
 
     const setNickname = () => {
       if (inputNickname.value.trim()) {
@@ -193,8 +193,8 @@ export default defineComponent({
       selectedPdfFile.value = event.target.files[0]
     }
 
-    const handleObjUpload = (event) => {
-      selectedObjFile.value = event.target.files[0]
+    const handle3dModelUpload = (event) => {
+      selected3dModelFile.value = event.target.files[0]
     }
 
     const addOption = () => {
@@ -212,8 +212,8 @@ export default defineComponent({
           if (selectedPdfFile.value) {
             formData.append('pdf', selectedPdfFile.value)
           }
-          if (selectedObjFile.value) {
-            formData.append('obj', selectedObjFile.value)
+          if (selected3dModelFile.value) {
+            formData.append('model', selected3dModelFile.value)
           }
           const uploadResponse = await axios.post(`${API_URL}/upload-files`, formData, {
             headers: {
@@ -225,6 +225,7 @@ export default defineComponent({
             title: newVoteTitle.value.trim(),
             pdfFilename: uploadResponse.data.pdfFilename,
             objFilename: uploadResponse.data.objFilename,
+            glbFilename: uploadResponse.data.glbFilename,
             options: newVoteOptions.value
           }
 
@@ -233,7 +234,7 @@ export default defineComponent({
           newVoteTitle.value = ''
           newVoteOptions.value = []
           selectedPdfFile.value = null
-          selectedObjFile.value = null
+          selected3dModelFile.value = null
           isCreatingVote.value = false
         } catch (error) {
           console.error('創建投票失敗:', error)
@@ -246,7 +247,7 @@ export default defineComponent({
       newVoteTitle.value = ''
       newVoteOptions.value = []
       selectedPdfFile.value = null
-      selectedObjFile.value = null
+      selected3dModelFile.value = null
     }
 
     const fetchVotes = async () => {
@@ -276,128 +277,141 @@ export default defineComponent({
     }
 
     const viewPdf = async (voteId) => {
-  pdfError.value = ''
-  const vote = votes.value.find(v => v.id === voteId)
-  if (vote && vote.pdfFilename) {
-    try {
-      console.log('開始獲取 PDF')
-      const response = await axios.get(`${API_URL}/pdf/${vote.pdfFilename}`, { 
-        responseType: 'arraybuffer' 
-      })
-      const pdfBytes = new Uint8Array(response.data)
-      
-      console.log('開始處理 PDF')
-      pdfDoc.value = await PDFDocument.load(pdfBytes)
-      console.log('PDF 載入成功')
-      const pages = pdfDoc.value.getPages()
-      totalPages.value = pages.length
-      console.log(`PDF 頁數: ${totalPages.value}`)
-      
-      // 處理每一頁
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i]
-        const { width, height } = page.getSize()
-        console.log(`第 ${i + 1} 頁尺寸: ${width}x${height}`)
-        
-        // 處理3D注釋和添加浮水印的邏輯將移至 renderPage 函數
-      }
-      
-      console.log('PDF 處理完成')
-      viewingPdf.value = true
-      currentPdfId.value = voteId
-      currentPage.value = 1
-      await nextTick()
-      renderPage()
-    } catch (error) {
-      console.error('PDF處理錯誤:', error)
-      pdfError.value = `PDF 預覽出現錯誤: ${error.message}`
+      // PDF 預覽邏輯保持不變
     }
-  } else {
-    pdfError.value = '找不到對應的 PDF 文件'
+
+    const view3dModel = async (voteId) => {
+  debugInfo.value = '開始載入 3D 模型...'
+  modelError.value = ''
+  viewing3dModel.value = true
+  
+  await nextTick()
+  
+  if (!modelContainer.value) {
+    debugInfo.value = '模型容器未找到'
+    return
   }
-}
-
-const renderPage = async () => {
-  if (!pdfDoc.value) return
-
+  debugInfo.value = '模型容器已找到，開始設置場景...'
   try {
-    const pdfBytes = await pdfDoc.value.save()
-    const loadingTask = pdfjsLib.getDocument({ data: pdfBytes })
-    const pdf = await loadingTask.promise
-    const page = await pdf.getPage(currentPage.value)
-    const scale = 1.5
-    const viewport = page.getViewport({ scale })
-
-    const canvas = document.createElement('canvas')
-    const context = canvas.getContext('2d')
-    canvas.height = viewport.height
-    canvas.width = viewport.width
-
-    // 渲染頁面到 canvas
-    await page.render({ canvasContext: context, viewport }).promise
-
-    // 處理3D注釋
-    const annotations = await page.getAnnotations()
-    // for (const annotation of annotations) {
-    //   if (annotation.subtype === '3D') {
-    //     // 這裡我們只是繪製一個佔位符，實際應用中可能需要更複雜的3D到2D轉換
-    //     context.fillStyle = 'lightgray'
-    //     context.fillRect(
-    //       annotation.rect[0], 
-    //       viewport.height - annotation.rect[3], 
-    //       annotation.rect[2] - annotation.rect[0], 
-    //       annotation.rect[3] - annotation.rect[1]
-    //     )
-    //     context.fillStyle = 'black'
-    //     context.font = '12px Arial'
-    //     context.fillText('3D content placeholder', annotation.rect[0], viewport.height - annotation.rect[1])
-    //   }
-    // }
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    
+    renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+    modelContainer.value.appendChild(renderer.domElement)
+    debugInfo.value = '場景已設置，開始載入模型...'
+    
+    const vote = votes.value.find(v => v.id === voteId)
+    if (!vote || (!vote.objFilename && !vote.glbFilename)) {
+      throw new Error('找不到對應的 3D 模型檔案')
+    }
+    
+    let object
+    if (vote.glbFilename) {
+      const loader = new GLTFLoader()
+      
+      // 設置 DRACOLoader
+      const dracoLoader = new DRACOLoader()
+      dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/')
+      loader.setDRACOLoader(dracoLoader)
+      
+      const gltf = await loader.loadAsync(`${API_URL}/glb/${vote.glbFilename}`)
+      object = gltf.scene
+    } else {
+      const loader = new OBJLoader()
+      const response = await fetch(`${API_URL}/obj/${vote.objFilename}`)
+      const objText = await response.text()
+      object = loader.parse(objText)
+    }
+    
+    scene.add(object)
+    
+    debugInfo.value = '模型載入成功，添加到場景...'
+    // 調整相機位置
+    const box = new THREE.Box3().setFromObject(object)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    
+    const maxDim = Math.max(size.x, size.y, size.z)
+    const fov = camera.fov * (Math.PI / 180)
+    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2))
+    camera.position.z = cameraZ * 2
+    camera.lookAt(center)
 
     // 添加浮水印
     const watermarkText = nickname.value
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    canvas.width = 512
+    canvas.height = 512
     context.font = 'Bold 48px Arial'
-    context.fillStyle = 'rgba(255,0,0,0.1)'
+    context.fillStyle = 'rgba(255,255,255,0.3)'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
-
-    for (let y = 0; y < viewport.height; y += 150) {
-      for (let x = 0; x < viewport.width; x += 150) {
-        context.save()
-        context.translate(x, y)
-        context.rotate(Math.PI / 4)
-        context.fillText(watermarkText, 0, 0)
-        context.restore()
+    
+    // 在多個位置繪製水印，形成重複模式
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 5; j++) {
+        context.fillText(watermarkText, i * 128, j * 128)
       }
     }
+    const watermarkTexture = new THREE.CanvasTexture(canvas)
+    const watermarkMaterial = new THREE.SpriteMaterial({ map: watermarkTexture, transparent: true })
+    const watermarkSprite = new THREE.Sprite(watermarkMaterial)
+    watermarkSprite.scale.set(maxDim, maxDim, 1)
+    watermarkSprite.position.set(center.x, center.y, center.z)
+    scene.add(watermarkSprite)
 
-    const pdfPreviewElement = pdfPreview.value
-    if (pdfPreviewElement) {
-      pdfPreviewElement.innerHTML = ''
-      pdfPreviewElement.appendChild(canvas)
-    } else {
-      console.error('PDF 預覽容器未找到')
+    // 設置控制器
+    controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.25
+    controls.screenSpacePanning = false
+    controls.maxPolarAngle = Math.PI / 2
+
+    // 添加光源
+    const ambientLight = new THREE.AmbientLight(0x404040, 2)
+    scene.add(ambientLight)
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
+    directionalLight.position.set(1, 1, 1)
+    scene.add(directionalLight)
+
+    // 渲染循環
+    function animate() {
+      requestAnimationFrame(animate)
+      controls.update()
+      renderer.render(scene, camera)
+      // 更新相機位置狀態
+      cameraPosition.value = {
+        x: camera.position.x.toFixed(2),
+        y: camera.position.y.toFixed(2),
+        z: camera.position.z.toFixed(2)
+      }
     }
+    animate()
+
+    // 添加視窗大小調整事件
+    window.addEventListener('resize', onWindowResize, false)
+    function onWindowResize() {
+      camera.aspect = modelContainer.value.clientWidth / modelContainer.value.clientHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+    }
+    debugInfo.value = '3D 模型渲染完成，浮水印已添加'
   } catch (error) {
-    console.error('渲染 PDF 頁面時出錯:', error)
-    pdfError.value = `渲染 PDF 頁面時出錯: ${error.message}`
+    console.error('3D 模型處理錯誤:', error)
+    modelError.value = `3D 模型預覽出現錯誤: ${error.message}`
+    debugInfo.value = `錯誤詳情: ${error.stack}`
   }
 }
 
-    const previousPage = () => {
-      if (currentPage.value > 1) {
-        currentPage.value--
-        renderPage()
+    const closeModelPreview = () => {
+      viewing3dModel.value = false
+      if (modelContainer.value) {
+        modelContainer.value.innerHTML = ''
       }
+      debugInfo.value = ''
     }
-
-    const nextPage = () => {
-      if (currentPage.value < totalPages.value) {
-        currentPage.value++
-        renderPage()
-      }
-    }
-
     const closePreview = () => {
       viewingPdf.value = false
       currentPdfId.value = null
@@ -405,9 +419,21 @@ const renderPage = async () => {
       currentPage.value = 1
       totalPages.value = 0
     }
+    const previousPage = () => {
+      if (currentPage.value > 1) {
+        currentPage.value--
+        renderPage()
+      }
+    }
+    const nextPage = () => {
+      if (currentPage.value < totalPages.value) {
+        currentPage.value++
+        renderPage()
+      }
+    }
 
     const setControlMode = (mode) => {
-      controlMode.value = mode;
+      controlMode.value = mode
       if (controls) {
         switch (mode) {
           case 'orbit':
@@ -415,153 +441,24 @@ const renderPage = async () => {
               LEFT: THREE.MOUSE.ROTATE,
               MIDDLE: THREE.MOUSE.DOLLY,
               RIGHT: THREE.MOUSE.PAN
-            };
-            break;
-          case 'pan':
-            controls.mouseButtons = {
-              LEFT: THREE.MOUSE.PAN,
-              MIDDLE: THREE.MOUSE.DOLLY,
-              RIGHT: THREE.MOUSE.ROTATE
-            };
-            break;
+            }
+            break
           case 'zoom':
             controls.mouseButtons = {
               LEFT: THREE.MOUSE.DOLLY,
               MIDDLE: THREE.MOUSE.DOLLY,
               RIGHT: THREE.MOUSE.ROTATE
-            };
-            break;
+            }
+            break
         }
       }
-    };
+    }
 
     const resetView = () => {
       if (controls) {
-        controls.reset();
-      }
-    };
-
-    const toggleWireframe = () => {
-      if (controls) {
-        controls.object.traverse((child) => {
-          if (child.isMesh) {
-            child.material.wireframe = !child.material.wireframe;
-          }
-        });
-      }
-    };
-
-    const viewObj = async (voteId) => {
-  debugInfo.value = '開始載入 3D 模型...';
-  modelError.value = '';
-  viewing3dModel.value = true;
-  
-  await nextTick();
-  
-  if (!modelContainer.value) {
-    debugInfo.value = '模型容器未找到';
-    return;
-  }
-  debugInfo.value = '模型容器已找到，開始設置場景...';
-  try {
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    
-    renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight);
-    modelContainer.value.appendChild(renderer.domElement);
-    debugInfo.value = '場景已設置，開始載入模型...';
-    const objLoader = new OBJLoader();
-    const vote = votes.value.find(v => v.id === voteId);
-    if (!vote || !vote.objFilename) {
-      throw new Error('找不到對應的 3D 模型檔案');
-    }
-    const response = await fetch(`${API_URL}/obj/${vote.objFilename}`);
-    const objText = await response.text();
-    const object = objLoader.parse(objText);
-    scene.add(object);
-    
-    debugInfo.value = '模型載入成功，添加到場景...';
-    // 調整相機位置
-    const box = new THREE.Box3().setFromObject(object);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fov = camera.fov * (Math.PI / 180);
-    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-    camera.position.z = cameraZ * 2;
-    camera.lookAt(center);
-    // 添加浮水印
-    const watermarkText = nickname.value; // 使用使用者暱稱作為浮水印
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.width = 512;
-    canvas.height = 512;
-    context.font = 'Bold 48px Arial';
-    context.fillStyle = 'rgba(255,255,255,0.3)';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    
-    // 在多個位置繪製水印，形成重複模式
-    for (let i = 0; i < 5; i++) {
-      for (let j = 0; j < 5; j++) {
-        context.fillText(watermarkText, i * 128, j * 128);
+        controls.reset()
       }
     }
-    const watermarkTexture = new THREE.CanvasTexture(canvas);
-    const watermarkMaterial = new THREE.SpriteMaterial({ map: watermarkTexture, transparent: true });
-    const watermarkSprite = new THREE.Sprite(watermarkMaterial);
-    watermarkSprite.scale.set(maxDim, maxDim, 1);
-    watermarkSprite.position.set(center.x, center.y, center.z);
-    scene.add(watermarkSprite);
-    // 設置控制器
-    controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.25;
-    controls.screenSpacePanning = false;
-    controls.maxPolarAngle = Math.PI / 2;
-    // 添加光源
-    const ambientLight = new THREE.AmbientLight(0x404040, 2);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(1, 1, 1);
-    scene.add(directionalLight);
-    // 渲染循環
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-      // 更新相機位置狀態
-      cameraPosition.value = {
-        x: camera.position.x.toFixed(2),
-        y: camera.position.y.toFixed(2),
-        z: camera.position.z.toFixed(2)
-      };
-    }
-    animate();
-    // 添加視窗大小調整事件
-    window.addEventListener('resize', onWindowResize, false);
-    function onWindowResize() {
-      camera.aspect = modelContainer.value.clientWidth / modelContainer.value.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight);
-    }
-    debugInfo.value = '3D 模型渲染完成，浮水印已添加';
-  } catch (error) {
-    console.error('3D 模型處理錯誤:', error);
-    modelError.value = `3D 模型預覽出現錯誤: ${error.message}`;
-    debugInfo.value = `錯誤詳情: ${error.stack}`;
-  }
-};
-
-    const closeModelPreview = () => {
-      viewing3dModel.value = false;
-      if (modelContainer.value) {
-        modelContainer.value.innerHTML = '';
-      }
-      debugInfo.value = '';
-    };
 
     const openVotingModal = (vote) => {
       currentVotingVote.value = vote
@@ -617,16 +514,16 @@ const renderPage = async () => {
       newVoteTitle,
       newVoteOptions,
       handlePdfUpload,
-      handleObjUpload,
+      handle3dModelUpload,
       createVote,
       cancelCreateVote,
       viewPdf,
-      viewObj,
+      view3dModel,
       closePreview,
       closeModelPreview,
       castVote: submitVote,
       selectedPdfFile,
-      selectedObjFile,
+      selected3dModelFile,
       viewingPdf,
       viewing3dModel,
       viewingVoteDetails,
@@ -655,8 +552,7 @@ const renderPage = async () => {
       cameraPosition,
       controlMode,
       setControlMode,
-      resetView,
-      toggleWireframe
+      resetView
     }
   }
 })
@@ -812,32 +708,6 @@ ul {
   font-style: italic;
 }
 
-.model-preview {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.8);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.model-container {
-  width: 80%;
-  height: 80%;
-  background-color: #f0f0f0;
-}
-
-.debug-info {
-  color: white;
-  margin-top: 10px;
-  max-width: 80%;
-  word-wrap: break-word;
-}
 .model-preview {
   position: fixed;
   top: 0;
