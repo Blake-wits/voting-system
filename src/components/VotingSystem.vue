@@ -339,21 +339,21 @@ const renderPage = async () => {
 
     // 處理3D注釋
     const annotations = await page.getAnnotations()
-    // for (const annotation of annotations) {
-    //   if (annotation.subtype === '3D') {
-    //     // 這裡我們只是繪製一個佔位符，實際應用中可能需要更複雜的3D到2D轉換
-    //     context.fillStyle = 'lightgray'
-    //     context.fillRect(
-    //       annotation.rect[0], 
-    //       viewport.height - annotation.rect[3], 
-    //       annotation.rect[2] - annotation.rect[0], 
-    //       annotation.rect[3] - annotation.rect[1]
-    //     )
-    //     context.fillStyle = 'black'
-    //     context.font = '12px Arial'
-    //     context.fillText('3D content placeholder', annotation.rect[0], viewport.height - annotation.rect[1])
-    //   }
-    // }
+    for (const annotation of annotations) {
+      if (annotation.subtype === '3D') {
+        // 這裡我們只是繪製一個佔位符，實際應用中可能需要更複雜的3D到2D轉換
+        context.fillStyle = 'lightgray'
+        context.fillRect(
+          annotation.rect[0], 
+          viewport.height - annotation.rect[3], 
+          annotation.rect[2] - annotation.rect[0], 
+          annotation.rect[3] - annotation.rect[1]
+        )
+        context.fillStyle = 'black'
+        context.font = '12px Arial'
+        context.fillText('3D content placeholder', annotation.rect[0], viewport.height - annotation.rect[1])
+      }
+    }
 
     // 添加浮水印
     const watermarkText = nickname.value
@@ -385,7 +385,7 @@ const renderPage = async () => {
   }
 }
 
-    const view3dModel = async (voteId) => {
+const view3dModel = async (voteId) => {
   debugInfo.value = '開始載入 3D 模型...'
   modelError.value = ''
   viewing3dModel.value = true
@@ -402,8 +402,8 @@ const renderPage = async () => {
     const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     
-        // 設置背景為白色
-        renderer.setClearColor(0xffffff, 1)
+    // 設置背景為淺灰色
+    renderer.setClearColor(0xf0f0f0, 1)
     renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
     modelContainer.value.appendChild(renderer.domElement)
     debugInfo.value = '場景已設置，開始載入模型...'
@@ -445,6 +445,7 @@ const renderPage = async () => {
     camera.position.z = cameraZ * 2
     camera.lookAt(center)
 
+
     // 添加浮水印
     const watermarkText = nickname.value
     const canvas = document.createElement('canvas')
@@ -476,12 +477,24 @@ const renderPage = async () => {
     controls.screenSpacePanning = false
     controls.maxPolarAngle = Math.PI / 2
 
-    // 添加光源
-    const ambientLight = new THREE.AmbientLight(0x404040, 2)
+    // 改進光源設置
+    // 增強環境光
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
     scene.add(ambientLight)
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
+
+    // 添加半球光
+    const hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.5)
+    scene.add(hemisphereLight)
+
+    // 調整直射光
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
     directionalLight.position.set(1, 1, 1)
     scene.add(directionalLight)
+
+    // 添加點光源
+    const pointLight = new THREE.PointLight(0xffffff, 0.5)
+    pointLight.position.set(0, 5, 0)
+    scene.add(pointLight)
 
     // 渲染循環
     function animate() {
@@ -504,7 +517,7 @@ const renderPage = async () => {
       camera.updateProjectionMatrix()
       renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
     }
-    debugInfo.value = '3D 模型渲染完成，浮水印已添加'
+    debugInfo.value = '3D 模型渲染完成，照明已優化'
   } catch (error) {
     console.error('3D 模型處理錯誤:', error)
     modelError.value = `3D 模型預覽出現錯誤: ${error.message}`
