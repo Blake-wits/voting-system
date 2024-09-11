@@ -282,7 +282,7 @@ export default defineComponent({
       currentVote.value = null
     }
 
-    const viewPdf = async (voteId) => {
+const viewPdf = async (voteId) => {
   pdfError.value = ''
   const vote = votes.value.find(v => v.id === voteId)
   if (vote && vote.pdfFilename) {
@@ -366,7 +366,7 @@ const renderPage = async () => {
     const maxWidth = 300 // 每行最大寬度
     const lineHeight = 60 // 行高
 
-    for (let y = 0; y < viewport.height; y += viewport.height / 3) {
+    for (let y = 0; y < viewport.height; y += viewport.height / 4) {
       for (let x = 0; x < viewport.width; x += viewport.width / 3) {
         context.save()
         context.translate(x, y)
@@ -405,7 +405,7 @@ const view3dModel = async (voteId) => {
     const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     
-    renderer.setClearColor(0xf0f0f0, 1)
+    // renderer.setClearColor(0xf0f0f0, 1)
     renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
     modelContainer.value.appendChild(renderer.domElement)
     debugInfo.value = '場景已設置，開始載入模型...'
@@ -456,31 +456,54 @@ const view3dModel = async (voteId) => {
     camera.lookAt(scene.position)
 
     // 創建浮水印
-    const createWatermark = () => {
-  const canvas = document.createElement('canvas')
-  const context = canvas.getContext('2d')
-  canvas.width = 512
-  canvas.height = 512
+    const createWatermark = (size) => {
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
   
-  // 根據 nickname 的長度設置字體大小，最小 24px，最大 72px
-  const fontSize = Math.min(Math.max(nickname.value.length * 8, 24), 72)
-  context.font = `Bold ${fontSize}px Arial`
-  context.fillStyle = 'rgba(255,255,255,0.5)'
-  context.textAlign = 'center'
-  context.textBaseline = 'middle'
+  // 根據模型的尺寸動態調整畫布大小
+  const canvasWidth = Math.max(size.x * 100, 512); // 最小畫布寬度為 512
+  const canvasHeight = Math.max(size.y * 100, 512); // 最小畫布高度為 512
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
   
-  // 根據字體大小設置水印之間的間距
-  const spacing = fontSize * 2.5
-
-  // 在多個位置繪製水印，形成重複模式
-  for (let i = 0; i < 5; i++) {
-    for (let j = 0; j < 5; j++) {
-      context.fillText(nickname.value, i * spacing, j * spacing)
+  // 根據畫布大小動態設置字體大小
+  const fontSize = Math.min(Math.max(canvasWidth / 15, 24), 48);
+  context.font = `Bold ${fontSize}px Arial`;
+  context.fillStyle = 'rgba(255,255,255,0.5)';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  
+  // 設置水印的最大長度，超過此長度自動換行
+  const maxLineLength = 10;
+  const nicknameLines = [];
+  
+  // 將 nickname 分行
+  let tempLine = '';
+  for (let i = 0; i < nickname.value.length; i++) {
+    tempLine += nickname.value[i];
+    if (tempLine.length >= maxLineLength || i === nickname.value.length - 1) {
+      nicknameLines.push(tempLine);
+      tempLine = '';
     }
   }
   
+  // 動態計算文字之間的間距
+  const lineSpacing = fontSize * 1.5; // 行與行之間的間距，稍微大於字體大小
+  const gridSpacingX = canvasWidth / 2; // 動態計算X軸間距，將畫布分為5等分
+  const gridSpacingY = canvasHeight / 4; // 動態計算Y軸間距，將畫布分為5等分
+
+  // 在多個位置繪製水印，形成不重疊的模式
+  for (let i = 0; i < 5; i++) {
+    for (let j = 0; j < 5; j++) {
+      nicknameLines.forEach((line, index) => {
+        // 每一行都分別繪製在不同的 y 位置，並考慮行間距
+        context.fillText(line, i * gridSpacingX, j * gridSpacingY + (index * lineSpacing));
+      });
+    }
+  }
+
   // 將 canvas 作為紋理
-  const texture = new THREE.CanvasTexture(canvas)
+  const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
@@ -488,19 +511,21 @@ const view3dModel = async (voteId) => {
     depthTest: false,
     depthWrite: false,
     side: THREE.DoubleSide
-  })
-  
-  // 創建幾何體，這裡的 size.x 和 size.y 代表你所要應用的模型尺寸
-  const geometry = new THREE.PlaneGeometry(size.x, size.y)
-  const watermarkMesh = new THREE.Mesh(geometry, material)
-  
-  // 將浮水印放置在模型前面
-  watermarkMesh.position.z = size.z / 2 + 0.01
-  
-  return watermarkMesh
-}
+  });
 
-    const watermark = createWatermark()
+  // 創建幾何體，並根據模型大小設置浮水印平面大小
+  const geometry = new THREE.PlaneGeometry(size.x, size.y);
+  const watermarkMesh = new THREE.Mesh(geometry, material);
+
+  // 將浮水印放置在模型前面
+  watermarkMesh.position.z = size.z / 2 + 0.01;
+
+  return watermarkMesh;
+};
+
+
+
+    const watermark = createWatermark(size)
     group.add(watermark)
 
     // 設置控制器
