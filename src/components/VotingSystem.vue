@@ -300,16 +300,6 @@ export default defineComponent({
       totalPages.value = pages.length
       console.log(`PDF 頁數: ${totalPages.value}`)
       
-      // 處理每一頁
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i]
-        const { width, height } = page.getSize()
-        console.log(`第 ${i + 1} 頁尺寸: ${width}x${height}`)
-        
-        // 處理3D注釋和添加浮水印的邏輯將移至 renderPage 函數
-      }
-      
-      console.log('PDF 處理完成')
       viewingPdf.value = true
       currentPdfId.value = voteId
       currentPage.value = 1
@@ -343,45 +333,48 @@ const renderPage = async () => {
     // 渲染頁面到 canvas
     await page.render({ canvasContext: context, viewport }).promise
 
-    // 處理3D注釋
-    // const annotations = await page.getAnnotations()
-    // for (const annotation of annotations) {
-    //   if (annotation.subtype === '3D') {
-    //     // 這裡我們只是繪製一個佔位符，實際應用中可能需要更複雜的3D到2D轉換
-    //     context.fillStyle = 'lightgray'
-    //     context.fillRect(
-    //       annotation.rect[0], 
-    //       viewport.height - annotation.rect[3], 
-    //       annotation.rect[2] - annotation.rect[0], 
-    //       annotation.rect[3] - annotation.rect[1]
-    //     )
-    //     context.fillStyle = 'black'
-    //     context.font = '12px Arial'
-    //     context.fillText('3D content placeholder', annotation.rect[0], viewport.height - annotation.rect[1])
-    //   }
-    // }
-
     // 添加浮水印
+    const addWrappedWatermark = (ctx, text, x, y, maxWidth, lineHeight) => {
+      ctx.save()
+      ctx.font = 'Bold 48px Arial'
+      ctx.fillStyle = 'rgba(255,0,0,0.1)'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+
+      let words = text.split(' ')
+      let line = ''
+      let testLine = ''
+      let testWidth = 0
+
+      for(let n = 0; n < words.length; n++) {
+        testLine += words[n] + ' '
+        testWidth = ctx.measureText(testLine).width
+        if (testWidth > maxWidth && n > 0) {
+          ctx.fillText(line, x, y)
+          line = words[n] + ' '
+          y += lineHeight
+        }
+        else {
+          line = testLine
+        }
+      }
+      ctx.fillText(line, x, y)
+      ctx.restore()
+    }
+
     const watermarkText = nickname.value
-const textLength = watermarkText.length
-context.font = 'Bold 48px Arial'
-context.fillStyle = 'rgba(255,0,0,0.1)'
-context.textAlign = 'center'
-context.textBaseline = 'middle'
+    const maxWidth = 300 // 每行最大寬度
+    const lineHeight = 60 // 行高
 
-// 根據文字長度動態調整間距 (例如，長度越長，間距越大)
-const baseSpacing = 150
-const adjustedSpacing = baseSpacing + textLength * 10
-
-for (let y = 0; y < viewport.height; y += adjustedSpacing) {
-  for (let x = 0; x < viewport.width; x += adjustedSpacing) {
-    context.save()
-    context.translate(x, y)
-    context.rotate(Math.PI / 4)
-    context.fillText(watermarkText, 0, 0)
-    context.restore()
-  }
-}
+    for (let y = 0; y < viewport.height; y += viewport.height / 3) {
+      for (let x = 0; x < viewport.width; x += viewport.width / 3) {
+        context.save()
+        context.translate(x, y)
+        context.rotate(Math.PI / 4)
+        addWrappedWatermark(context, watermarkText, 0, 0, maxWidth, lineHeight)
+        context.restore()
+      }
+    }
 
     const pdfPreviewElement = pdfPreview.value
     if (pdfPreviewElement) {
@@ -395,7 +388,6 @@ for (let y = 0; y < viewport.height; y += adjustedSpacing) {
     pdfError.value = `渲染 PDF 頁面時出錯: ${error.message}`
   }
 }
-
 const view3dModel = async (voteId) => {
   debugInfo.value = '開始載入 3D 模型...'
   modelError.value = ''
