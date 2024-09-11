@@ -344,22 +344,22 @@ const renderPage = async () => {
     await page.render({ canvasContext: context, viewport }).promise
 
     // 處理3D注釋
-    const annotations = await page.getAnnotations()
-    for (const annotation of annotations) {
-      if (annotation.subtype === '3D') {
-        // 這裡我們只是繪製一個佔位符，實際應用中可能需要更複雜的3D到2D轉換
-        context.fillStyle = 'lightgray'
-        context.fillRect(
-          annotation.rect[0], 
-          viewport.height - annotation.rect[3], 
-          annotation.rect[2] - annotation.rect[0], 
-          annotation.rect[3] - annotation.rect[1]
-        )
-        context.fillStyle = 'black'
-        context.font = '12px Arial'
-        context.fillText('3D content placeholder', annotation.rect[0], viewport.height - annotation.rect[1])
-      }
-    }
+    // const annotations = await page.getAnnotations()
+    // for (const annotation of annotations) {
+    //   if (annotation.subtype === '3D') {
+    //     // 這裡我們只是繪製一個佔位符，實際應用中可能需要更複雜的3D到2D轉換
+    //     context.fillStyle = 'lightgray'
+    //     context.fillRect(
+    //       annotation.rect[0], 
+    //       viewport.height - annotation.rect[3], 
+    //       annotation.rect[2] - annotation.rect[0], 
+    //       annotation.rect[3] - annotation.rect[1]
+    //     )
+    //     context.fillStyle = 'black'
+    //     context.font = '12px Arial'
+    //     context.fillText('3D content placeholder', annotation.rect[0], viewport.height - annotation.rect[1])
+    //   }
+    // }
 
     // 添加浮水印
     const watermarkText = nickname.value
