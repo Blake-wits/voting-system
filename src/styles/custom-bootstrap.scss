@@ -1,0 +1,9 @@
+// src/styles/custom-bootstrap.scss
+
+// 首先導入我們的變量
+@import "variables";
+
+// 然後導入Bootstrap的部分或全部
+@import "~bootstrap/scss/bootstrap";
+
+// 在這裡可以添加任何其他自定義樣式或覆蓋

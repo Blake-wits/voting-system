@@ -1,44 +1,50 @@
 <template>
-  <div class="voting-system">
-    <h1>{{ title }}</h1>
+  <div class="voting-system container mt-4">
+    <h1 class="mb-4">{{ title }}</h1>
     
     <!-- 暱稱輸入 -->
-    <div v-if="!nickname" class="nickname-input">
-      <input v-model="inputNickname" placeholder="請輸入您的暱稱" @keyup.enter="setNickname" />
-      <button @click="setNickname">確認</button>
+    <div v-if="!nickname" class="mb-3">
+      <input v-model="inputNickname" class="form-control" placeholder="請輸入您的暱稱" @keyup.enter="setNickname" />
+      <button @click="setNickname" class="btn btn-primary mt-2">確認</button>
     </div>
     
     <!-- 主要功能區 -->
     <div v-else>
-      <p>歡迎，{{ nickname }}!</p>
+      <p class="lead">歡迎，{{ nickname }}!</p>
       
       <!-- 投票列表 -->
       <div v-if="!isCreatingVote && !viewingPdf && !viewing3dModel && !viewingVoteDetails" class="vote-list">
-        <h2>當前投票</h2>
-        <ul>
-          <li v-for="vote in votes" :key="vote.id" class="vote-item">
-            <div class="vote-title">{{ vote.title }}</div>
-            <div class="vote-count">票數: {{ vote.totalVotes }}</div>
-            <div class="vote-actions">
-              <button @click="viewPdf(vote.id)" v-if="vote.pdfFilename">查看 PDF</button>
-              <button @click="view3dModel(vote.id)" v-if="vote.objFilename || vote.glbFilename">查看 3D 模型</button>
-              <button @click="viewVoteDetails(vote.id)">詳細資訊</button>
-              <button 
-                v-if="!hasVoted(vote.id)" 
-                @click="openVotingModal(vote)"
-              >
-                投票
-              </button>
-              <button 
-                v-else
-                disabled
-              >
-                已投票
-              </button>
+        <h2 class="mb-3">當前投票</h2>
+        <ul class="list-group">
+          <li v-for="vote in votes" :key="vote.id" class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h5 class="mb-1">{{ vote.title }}</h5>
+                <small class="text-muted">票數: {{ vote.totalVotes }}</small>
+              </div>
+              <div class="btn-group" role="group">
+                <button @click="viewPdf(vote.id)" v-if="vote.pdfFilename" class="btn btn-outline-secondary btn-sm">查看 PDF</button>
+                <button @click="view3dModel(vote.id)" v-if="vote.objFilename || vote.glbFilename" class="btn btn-outline-secondary btn-sm">查看 3D 模型</button>
+                <button @click="viewVoteDetails(vote.id)" class="btn btn-outline-info btn-sm">詳細資訊</button>
+                <button 
+                  v-if="!hasVoted(vote.id)" 
+                  @click="openVotingModal(vote)"
+                  class="btn btn-primary btn-sm"
+                >
+                  投票
+                </button>
+                <button 
+                  v-else
+                  disabled
+                  class="btn btn-secondary btn-sm"
+                >
+                  已投票
+                </button>
+              </div>
             </div>
           </li>
         </ul>
-        <button @click="isCreatingVote = true">建立新投票</button>
+        <button @click="isCreatingVote = true" class="btn btn-success mt-3">建立新投票</button>
       </div>
       
       <!-- 建立投票表單 -->

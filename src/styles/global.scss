@@ -1,0 +1,19 @@
+// src/styles/global.scss
+
+// 導入自定義Bootstrap
+@import "./custom-bootstrap.scss";
+
+body {
+  background-color: $body-bg;
+  color: $body-color;
+  font-family: Arial, sans-serif;
+}
+
+a {
+  color: $primary;
+  &:hover {
+    color: darken($primary, 10%);
+  }
+}
+
+// 可以添加更多全局樣式

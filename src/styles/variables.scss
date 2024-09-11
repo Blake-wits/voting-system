@@ -1,0 +1,39 @@
+// src/styles/variables.scss
+
+// 自定義顏色
+$primary: #A855F7;
+$secondary: #71717A;
+$success: #10B981;
+$info: #3B82F6;
+$warning: #FFA500;
+$danger: #EF4444;
+$light: #F4F4F5;
+$dark: #18181B;
+
+// Bootstrap覆蓋
+$body-bg: #121212;
+$body-color: #F4F4F5;
+
+$theme-colors: (
+  "primary": $primary,
+  "secondary": $secondary,
+  "success": $success,
+  "info": $info,
+  "warning": $warning,
+  "danger": $danger,
+  "light": $light,
+  "dark": $dark
+);
+
+// 其他自定義變量
+$card-bg: #1C1C1C;
+$input-bg: #27272A;
+$input-color: #F4F4F5;
+$input-border-color: #3F3F46;
+
+// 導入Bootstrap的函數和變量（但不導入樣式）
+@import "~bootstrap/scss/functions";
+@import "~bootstrap/scss/variables";
+@import "~bootstrap/scss/mixins";
+
+// 在這裡可以添加更多自定義變量或覆蓋其他Bootstrap變量

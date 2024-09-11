@@ -7,7 +7,22 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '~bootstrap': path.resolve(__dirname, 'node_modules/bootstrap'),
     },
+  },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        additionalData: `
+          @import "@/styles/variables.scss";
+          @import "~bootstrap/scss/bootstrap";
+        `,
+        sassOptions: {
+          quietDeps: true,
+        },
+      },
+      
+    }
   },
   build: {
     rollupOptions: {
@@ -15,18 +30,19 @@ export default defineConfig({
         manualChunks: {
           'pdfjs': ['pdfjs-dist'],
           'pdf-lib': ['pdf-lib'],
+          'bootstrap': ['bootstrap'],
         }
       }
     },
-    chunkSizeWarningLimit: 1000, // 增加塊大小警告限制
+    chunkSizeWarningLimit: 1000,
   },
   optimizeDeps: {
-    include: ['pdfjs-dist', 'pdf-lib']
+    include: ['pdfjs-dist', 'pdf-lib', 'bootstrap']
   },
   server: {
-    port: 3000, // 或者您想要的任何端口
+    port: 3000,
   },
   preview: {
-    port: 4173, // Vite 預覽的默認端口
+    port: 4173,
   },
 })
