@@ -531,138 +531,453 @@ const renderPage = async () => {
 //   }
 // }
 
+// const view3dModel = async (voteId) => {
+//       debugInfo.value = '開始載入 3D 模型...'
+//       modelError.value = ''
+//       viewing3dModel.value = true
+      
+//       await nextTick()
+      
+//       if (!modelContainer.value) {
+//         debugInfo.value = '模型容器未找到'
+//         return
+//       }
+//       debugInfo.value = '模型容器已找到，開始設置場景...'
+//       try {
+//         const scene = new THREE.Scene()
+//         const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
+//         const renderer = new THREE.WebGLRenderer({ antialias: true })
+        
+//         renderer.setClearColor(0xf0f0f0, 1)
+//         renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+//         modelContainer.value.appendChild(renderer.domElement)
+//         debugInfo.value = '場景已設置，開始載入模型...'
+        
+//         const vote = votes.value.find(v => v.id === voteId)
+//         if (!vote || (!vote.objFilename && !vote.glbFilename)) {
+//           throw new Error('找不到對應的 3D 模型檔案')
+//         }
+        
+//         let object
+//         if (vote.glbFilename) {
+//           const loader = new GLTFLoader()
+//           const dracoLoader = new DRACOLoader()
+//           dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/')
+//           loader.setDRACOLoader(dracoLoader)
+//           const gltf = await loader.loadAsync(`${API_URL}/glb/${vote.glbFilename}`)
+//           object = gltf.scene
+//         } else {
+//           const loader = new OBJLoader()
+//           const response = await fetch(`${API_URL}/obj/${vote.objFilename}`)
+//           const objText = await response.text()
+//           object = loader.parse(objText)
+//         }
+        
+//         scene.add(object)
+        
+//         debugInfo.value = '模型載入成功，添加到場景...'
+        
+//         // 計算物件的邊界框
+//         const box = new THREE.Box3().setFromObject(object)
+//         const center = box.getCenter(new THREE.Vector3())
+//         const size = box.getSize(new THREE.Vector3())
+        
+//         // 調整相機位置
+//         const maxDim = Math.max(size.x, size.y, size.z)
+//         const fov = camera.fov * (Math.PI / 180)
+//         let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2))
+//         camera.position.set(center.x, center.y, center.z + cameraZ * 2)
+//         camera.lookAt(center)
+
+//         // 設置控制器
+//         const controls = new OrbitControls(camera, renderer.domElement)
+//         controls.enableDamping = true
+//         controls.dampingFactor = 0.25
+//         controls.screenSpacePanning = false
+//         controls.maxPolarAngle = Math.PI / 2
+//         controls.target.copy(center)  // 設置控制器的目標點為物件中心
+
+//         // 添加光源
+//         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+//         scene.add(ambientLight)
+
+//         const hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.5)
+//         scene.add(hemisphereLight)
+
+//         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+//         directionalLight.position.set(1, 1, 1)
+//         scene.add(directionalLight)
+
+//         const pointLight = new THREE.PointLight(0xffffff, 0.5)
+//         pointLight.position.copy(center).add(new THREE.Vector3(0, size.y / 2, 0))
+//         scene.add(pointLight)
+
+//         // 添加浮水印
+//         const watermarkText = nickname.value
+//         const canvas = document.createElement('canvas')
+//         const context = canvas.getContext('2d')
+//         canvas.width = 512
+//         canvas.height = 512
+//         context.font = 'Bold 48px Arial'
+//         context.fillStyle = 'rgba(0,0,0,0.1)'
+//         context.textAlign = 'center'
+//         context.textBaseline = 'middle'
+        
+//         for (let i = 0; i < 5; i++) {
+//           for (let j = 0; j < 5; j++) {
+//             context.fillText(watermarkText, i * 128, j * 128)
+//           }
+//         }
+//         const watermarkTexture = new THREE.CanvasTexture(canvas)
+//         const watermarkMaterial = new THREE.SpriteMaterial({ map: watermarkTexture, transparent: true })
+//         const watermarkSprite = new THREE.Sprite(watermarkMaterial)
+//         watermarkSprite.scale.set(maxDim, maxDim, 1)
+//         watermarkSprite.position.copy(center)
+//         scene.add(watermarkSprite)
+
+//         // 渲染循環
+//         function animate() {
+//           requestAnimationFrame(animate)
+//           controls.update()
+//           renderer.render(scene, camera)
+//           // 更新相機位置狀態
+//           cameraPosition.value = {
+//             x: camera.position.x.toFixed(2),
+//             y: camera.position.y.toFixed(2),
+//             z: camera.position.z.toFixed(2)
+//           }
+//         }
+//         animate()
+
+//         // 添加視窗大小調整事件
+//         window.addEventListener('resize', onWindowResize, false)
+//         function onWindowResize() {
+//           camera.aspect = modelContainer.value.clientWidth / modelContainer.value.clientHeight
+//           camera.updateProjectionMatrix()
+//           renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+//         }
+//         debugInfo.value = '3D 模型渲染完成，照明已優化'
+//       } catch (error) {
+//         console.error('3D 模型處理錯誤:', error)
+//         modelError.value = `3D 模型預覽出現錯誤: ${error.message}`
+//         debugInfo.value = `錯誤詳情: ${error.stack}`
+//       }
+//     }
+
+// const view3dModel = async (voteId) => {
+//   debugInfo.value = '開始載入 3D 模型...'
+//   modelError.value = ''
+//   viewing3dModel.value = true
+  
+//   await nextTick()
+  
+//   if (!modelContainer.value) {
+//     debugInfo.value = '模型容器未找到'
+//     return
+//   }
+//   debugInfo.value = '模型容器已找到，開始設置場景...'
+//   try {
+//     const scene = new THREE.Scene()
+//     const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
+//     const renderer = new THREE.WebGLRenderer({ antialias: true })
+    
+//     renderer.setClearColor(0xf0f0f0, 1)
+//     renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+//     modelContainer.value.appendChild(renderer.domElement)
+//     debugInfo.value = '場景已設置，開始載入模型...'
+    
+//     const vote = votes.value.find(v => v.id === voteId)
+//     if (!vote || (!vote.objFilename && !vote.glbFilename)) {
+//       throw new Error('找不到對應的 3D 模型檔案')
+//     }
+    
+//     let object
+//     if (vote.glbFilename) {
+//       const loader = new GLTFLoader()
+      
+//       // 設置 DRACOLoader
+//       const dracoLoader = new DRACOLoader()
+//       dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/')
+//       loader.setDRACOLoader(dracoLoader)
+      
+//       const gltf = await loader.loadAsync(`${API_URL}/glb/${vote.glbFilename}`)
+//       object = gltf.scene
+//     } else {
+//       const loader = new OBJLoader()
+//       const response = await fetch(`${API_URL}/obj/${vote.objFilename}`)
+//       const objText = await response.text()
+//       object = loader.parse(objText)
+//     }
+    
+//     scene.add(object)
+    
+//     debugInfo.value = '模型載入成功，添加到場景...'
+//     // 調整相機位置
+//     const box = new THREE.Box3().setFromObject(object)
+//     const center = box.getCenter(new THREE.Vector3())
+//     const size = box.getSize(new THREE.Vector3())
+    
+//     const maxDim = Math.max(size.x, size.y, size.z)
+//     const fov = camera.fov * (Math.PI / 180)
+//     let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2))
+//     camera.position.z = cameraZ * 2
+//     camera.lookAt(center)
+
+//     // 創建浮水印
+//     const createWatermark = () => {
+//       const canvas = document.createElement('canvas')
+//       const context = canvas.getContext('2d')
+//       canvas.width = 512
+//       canvas.height = 512
+//       context.font = 'Bold 48px Arial'
+//       context.fillStyle = 'rgba(255,255,255,0.5)'
+//       context.textAlign = 'center'
+//       context.textBaseline = 'middle'
+      
+//       // 在多個位置繪製水印，形成重複模式
+//       for (let i = 0; i < 5; i++) {
+//         for (let j = 0; j < 5; j++) {
+//           context.fillText(nickname.value, i * 128, j * 128)
+//         }
+//       }
+      
+//       const texture = new THREE.CanvasTexture(canvas)
+//       const material = new THREE.MeshBasicMaterial({
+//         map: texture,
+//         transparent: true,
+//         opacity: 0.5,
+//         depthTest: false,
+//         depthWrite: false,
+//       })
+      
+//       const geometry = new THREE.PlaneGeometry(size.x, size.y)
+//       const watermarkMesh = new THREE.Mesh(geometry, material)
+      
+//       // 將浮水印放置在模型前面
+//       watermarkMesh.position.set(center.x, center.y, center.z + size.z / 2 + 0.01)
+      
+//       return watermarkMesh
+//     }
+
+//     const watermark = createWatermark()
+//     scene.add(watermark)
+
+//     // 設置控制器
+//     const controls = new OrbitControls(camera, renderer.domElement)
+//     controls.enableDamping = true
+//     controls.dampingFactor = 0.25
+//     controls.screenSpacePanning = false
+//     controls.maxPolarAngle = Math.PI / 2
+
+//     // 改進光源設置
+//     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+//     scene.add(ambientLight)
+
+//     const hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.5)
+//     scene.add(hemisphereLight)
+
+//     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+//     directionalLight.position.set(1, 1, 1)
+//     scene.add(directionalLight)
+
+//     const pointLight = new THREE.PointLight(0xffffff, 0.5)
+//     pointLight.position.set(0, 5, 0)
+//     scene.add(pointLight)
+
+//     // 渲染循環
+//     function animate() {
+//       requestAnimationFrame(animate)
+//       controls.update()
+      
+//       // 更新浮水印位置，使其始終面向相機
+//       watermark.lookAt(camera.position)
+      
+//       renderer.render(scene, camera)
+//       // 更新相機位置狀態
+//       cameraPosition.value = {
+//         x: camera.position.x.toFixed(2),
+//         y: camera.position.y.toFixed(2),
+//         z: camera.position.z.toFixed(2)
+//       }
+//     }
+//     animate()
+
+//     // 添加視窗大小調整事件
+//     window.addEventListener('resize', onWindowResize, false)
+//     function onWindowResize() {
+//       camera.aspect = modelContainer.value.clientWidth / modelContainer.value.clientHeight
+//       camera.updateProjectionMatrix()
+//       renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+//     }
+//     debugInfo.value = '3D 模型渲染完成，照明已優化'
+//   } catch (error) {
+//     console.error('3D 模型處理錯誤:', error)
+//     modelError.value = `3D 模型預覽出現錯誤: ${error.message}`
+//     debugInfo.value = `錯誤詳情: ${error.stack}`
+//   }
+// }
 const view3dModel = async (voteId) => {
-      debugInfo.value = '開始載入 3D 模型...'
-      modelError.value = ''
-      viewing3dModel.value = true
+  debugInfo.value = '開始載入 3D 模型...'
+  modelError.value = ''
+  viewing3dModel.value = true
+  
+  await nextTick()
+  
+  if (!modelContainer.value) {
+    debugInfo.value = '模型容器未找到'
+    return
+  }
+  debugInfo.value = '模型容器已找到，開始設置場景...'
+  try {
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    
+    renderer.setClearColor(0xf0f0f0, 1)
+    renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+    modelContainer.value.appendChild(renderer.domElement)
+    debugInfo.value = '場景已設置，開始載入模型...'
+    
+    const vote = votes.value.find(v => v.id === voteId)
+    if (!vote || (!vote.objFilename && !vote.glbFilename)) {
+      throw new Error('找不到對應的 3D 模型檔案')
+    }
+    
+    let object
+    if (vote.glbFilename) {
+      const loader = new GLTFLoader()
       
-      await nextTick()
+      // 設置 DRACOLoader
+      const dracoLoader = new DRACOLoader()
+      dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/')
+      loader.setDRACOLoader(dracoLoader)
       
-      if (!modelContainer.value) {
-        debugInfo.value = '模型容器未找到'
-        return
+      const gltf = await loader.loadAsync(`${API_URL}/glb/${vote.glbFilename}`)
+      object = gltf.scene
+    } else {
+      const loader = new OBJLoader()
+      const response = await fetch(`${API_URL}/obj/${vote.objFilename}`)
+      const objText = await response.text()
+      object = loader.parse(objText)
+    }
+    
+    // 計算物件的邊界框
+    const box = new THREE.Box3().setFromObject(object)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    
+    // 將物件移動到原點
+    object.position.sub(center)
+    
+    // 創建一個組來包含物件，這樣我們可以更容易地控制整個模型
+    const group = new THREE.Group()
+    group.add(object)
+    scene.add(group)
+    
+    debugInfo.value = '模型載入成功，添加到場景...'
+    
+    // 調整相機位置
+    const maxDim = Math.max(size.x, size.y, size.z)
+    const fov = camera.fov * (Math.PI / 180)
+    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2))
+    camera.position.z = cameraZ * 2
+    camera.lookAt(scene.position)
+
+    // 創建浮水印
+    const createWatermark = () => {
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      canvas.width = 512
+      canvas.height = 512
+      context.font = 'Bold 48px Arial'
+      context.fillStyle = 'rgba(255,255,255,0.5)'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      
+      // 在多個位置繪製水印，形成重複模式
+      for (let i = 0; i < 5; i++) {
+        for (let j = 0; j < 5; j++) {
+          context.fillText(nickname.value, i * 128, j * 128)
+        }
       }
-      debugInfo.value = '模型容器已找到，開始設置場景...'
-      try {
-        const scene = new THREE.Scene()
-        const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
-        const renderer = new THREE.WebGLRenderer({ antialias: true })
-        
-        renderer.setClearColor(0xf0f0f0, 1)
-        renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
-        modelContainer.value.appendChild(renderer.domElement)
-        debugInfo.value = '場景已設置，開始載入模型...'
-        
-        const vote = votes.value.find(v => v.id === voteId)
-        if (!vote || (!vote.objFilename && !vote.glbFilename)) {
-          throw new Error('找不到對應的 3D 模型檔案')
-        }
-        
-        let object
-        if (vote.glbFilename) {
-          const loader = new GLTFLoader()
-          const dracoLoader = new DRACOLoader()
-          dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/')
-          loader.setDRACOLoader(dracoLoader)
-          const gltf = await loader.loadAsync(`${API_URL}/glb/${vote.glbFilename}`)
-          object = gltf.scene
-        } else {
-          const loader = new OBJLoader()
-          const response = await fetch(`${API_URL}/obj/${vote.objFilename}`)
-          const objText = await response.text()
-          object = loader.parse(objText)
-        }
-        
-        scene.add(object)
-        
-        debugInfo.value = '模型載入成功，添加到場景...'
-        
-        // 計算物件的邊界框
-        const box = new THREE.Box3().setFromObject(object)
-        const center = box.getCenter(new THREE.Vector3())
-        const size = box.getSize(new THREE.Vector3())
-        
-        // 調整相機位置
-        const maxDim = Math.max(size.x, size.y, size.z)
-        const fov = camera.fov * (Math.PI / 180)
-        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2))
-        camera.position.set(center.x, center.y, center.z + cameraZ * 2)
-        camera.lookAt(center)
+      
+      const texture = new THREE.CanvasTexture(canvas)
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.5,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      })
+      
+      const geometry = new THREE.PlaneGeometry(size.x, size.y)
+      const watermarkMesh = new THREE.Mesh(geometry, material)
+      
+      // 將浮水印放置在模型前面
+      watermarkMesh.position.z = size.z / 2 + 0.01
+      
+      return watermarkMesh
+    }
 
-        // 設置控制器
-        const controls = new OrbitControls(camera, renderer.domElement)
-        controls.enableDamping = true
-        controls.dampingFactor = 0.25
-        controls.screenSpacePanning = false
-        controls.maxPolarAngle = Math.PI / 2
-        controls.target.copy(center)  // 設置控制器的目標點為物件中心
+    const watermark = createWatermark()
+    group.add(watermark)
 
-        // 添加光源
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
-        scene.add(ambientLight)
+    // 設置控制器
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.25
+    controls.screenSpacePanning = false
+    controls.maxPolarAngle = Math.PI / 2
+    controls.target.set(0, 0, 0) // 設置控制器的目標點為場景中心
 
-        const hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.5)
-        scene.add(hemisphereLight)
+    // 改進光源設置
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+    scene.add(ambientLight)
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-        directionalLight.position.set(1, 1, 1)
-        scene.add(directionalLight)
+    const hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.5)
+    scene.add(hemisphereLight)
 
-        const pointLight = new THREE.PointLight(0xffffff, 0.5)
-        pointLight.position.copy(center).add(new THREE.Vector3(0, size.y / 2, 0))
-        scene.add(pointLight)
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+    directionalLight.position.set(1, 1, 1)
+    scene.add(directionalLight)
 
-        // 添加浮水印
-        const watermarkText = nickname.value
-        const canvas = document.createElement('canvas')
-        const context = canvas.getContext('2d')
-        canvas.width = 512
-        canvas.height = 512
-        context.font = 'Bold 48px Arial'
-        context.fillStyle = 'rgba(0,0,0,0.1)'
-        context.textAlign = 'center'
-        context.textBaseline = 'middle'
-        
-        for (let i = 0; i < 5; i++) {
-          for (let j = 0; j < 5; j++) {
-            context.fillText(watermarkText, i * 128, j * 128)
-          }
-        }
-        const watermarkTexture = new THREE.CanvasTexture(canvas)
-        const watermarkMaterial = new THREE.SpriteMaterial({ map: watermarkTexture, transparent: true })
-        const watermarkSprite = new THREE.Sprite(watermarkMaterial)
-        watermarkSprite.scale.set(maxDim, maxDim, 1)
-        watermarkSprite.position.copy(center)
-        scene.add(watermarkSprite)
+    const pointLight = new THREE.PointLight(0xffffff, 0.5)
+    pointLight.position.set(0, 5, 0)
+    scene.add(pointLight)
 
-        // 渲染循環
-        function animate() {
-          requestAnimationFrame(animate)
-          controls.update()
-          renderer.render(scene, camera)
-          // 更新相機位置狀態
-          cameraPosition.value = {
-            x: camera.position.x.toFixed(2),
-            y: camera.position.y.toFixed(2),
-            z: camera.position.z.toFixed(2)
-          }
-        }
-        animate()
-
-        // 添加視窗大小調整事件
-        window.addEventListener('resize', onWindowResize, false)
-        function onWindowResize() {
-          camera.aspect = modelContainer.value.clientWidth / modelContainer.value.clientHeight
-          camera.updateProjectionMatrix()
-          renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
-        }
-        debugInfo.value = '3D 模型渲染完成，照明已優化'
-      } catch (error) {
-        console.error('3D 模型處理錯誤:', error)
-        modelError.value = `3D 模型預覽出現錯誤: ${error.message}`
-        debugInfo.value = `錯誤詳情: ${error.stack}`
+    // 渲染循環
+    function animate() {
+      requestAnimationFrame(animate)
+      controls.update()
+      
+      // 更新浮水印位置，使其始終面向相機
+      watermark.lookAt(camera.position)
+      
+      renderer.render(scene, camera)
+      // 更新相機位置狀態
+      cameraPosition.value = {
+        x: camera.position.x.toFixed(2),
+        y: camera.position.y.toFixed(2),
+        z: camera.position.z.toFixed(2)
       }
     }
+    animate()
+
+    // 添加視窗大小調整事件
+    window.addEventListener('resize', onWindowResize, false)
+    function onWindowResize() {
+      camera.aspect = modelContainer.value.clientWidth / modelContainer.value.clientHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
+    }
+    debugInfo.value = '3D 模型渲染完成，照明已優化'
+  } catch (error) {
+    console.error('3D 模型處理錯誤:', error)
+    modelError.value = `3D 模型預覽出現錯誤: ${error.message}`
+    debugInfo.value = `錯誤詳情: ${error.stack}`
+  }
+}
     const closeModelPreview = () => {
       viewing3dModel.value = false
       if (modelContainer.value) {
