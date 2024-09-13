@@ -400,14 +400,15 @@ const view3dModel = async (voteId) => {
     return
   }
   debugInfo.value = '模型容器已找到，開始設置場景...'
+  
   try {
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(75, modelContainer.value.clientWidth / modelContainer.value.clientHeight, 0.1, 1000)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
-    
     // renderer.setClearColor(0xf0f0f0, 1)
     renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
     modelContainer.value.appendChild(renderer.domElement)
+    
     debugInfo.value = '場景已設置，開始載入模型...'
     
     const vote = votes.value.find(v => v.id === voteId)
@@ -419,7 +420,6 @@ const view3dModel = async (voteId) => {
     if (vote.glbFilename) {
       const loader = new GLTFLoader()
       
-      // 設置 DRACOLoader
       const dracoLoader = new DRACOLoader()
       dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/')
       loader.setDRACOLoader(dracoLoader)
@@ -433,100 +433,113 @@ const view3dModel = async (voteId) => {
       object = loader.parse(objText)
     }
     
-    // 計算物件的邊界框
+    debugInfo.value = '模型已加載，正在處理...'
+    
+    // 計算模型的邊界框
     const box = new THREE.Box3().setFromObject(object)
     const center = box.getCenter(new THREE.Vector3())
     const size = box.getSize(new THREE.Vector3())
     
-    // 將物件移動到原點
-    object.position.sub(center)
+    object.position.sub(center) // 將模型置中
     
-    // 創建一個組來包含物件，這樣我們可以更容易地控制整個模型
     const group = new THREE.Group()
     group.add(object)
     scene.add(group)
     
-    debugInfo.value = '模型載入成功，添加到場景...'
+    debugInfo.value = '模型已添加到場景，正在應用水印...'
     
-    // 調整相機位置
+  // 創建水印材質
+  const createWatermarkMaterial = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1024
+    canvas.height = 1024
+    const context = canvas.getContext('2d')
+    context.fillStyle = 'rgba(255, 255, 255, 0.3)'
+    context.font = '30px Arial'
+    context.color = 'red'
+    
+    const watermarkText = nickname.value
+    const lines = watermarkText.split(' ')
+    const lineHeight = 40
+    const textWidth = context.measureText(watermarkText).width
+    
+    const drawWatermark = (x, y) => {
+      lines.forEach((line, index) => {
+        context.fillText(line, x, y + index * lineHeight)
+      })
+    }
+    
+    // 計算每行和每列可以容納的水印數量
+    const watermarkWidth = textWidth + 20
+    const watermarkHeight = lines.length * lineHeight + 20
+    const columns = Math.floor(canvas.width / watermarkWidth)
+    const rows = Math.floor(canvas.height / watermarkHeight)
+    
+    // 繪製水印
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < columns; j++) {
+        const x = j * watermarkWidth + watermarkWidth / 2
+        const y = i * watermarkHeight + 30
+        drawWatermark(x, y)
+      }
+    }
+    
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.repeat.set(1, 1)
+    texture.wrapS = THREE.RepeatWrapping
+    texture.wrapT = THREE.RepeatWrapping
+    
+    return new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  }
+
+  const watermarkMaterial = createWatermarkMaterial()
+
+  // 創建六個面的水印
+  const createWatermarkPlane = (width, height, rotationY = 0, rotationX = 0) => {
+    const geometry = new THREE.PlaneGeometry(width, height)
+    const mesh = new THREE.Mesh(geometry, watermarkMaterial)
+    mesh.rotation.x = rotationX
+    mesh.rotation.y = rotationY
+    return mesh
+  }
+
+  const offset = 0.01 // 稍微偏移以避免與模型重疊
+
+  // 前後
+  const frontWatermark = createWatermarkPlane(size.x, size.y)
+  frontWatermark.position.z = size.z / 2 + offset
+  const backWatermark = createWatermarkPlane(size.x, size.y, Math.PI)
+  backWatermark.position.z = -size.z / 2 - offset
+
+  // 左右
+  const leftWatermark = createWatermarkPlane(size.z, size.y, -Math.PI / 2)
+  leftWatermark.position.x = -size.x / 2 - offset
+  const rightWatermark = createWatermarkPlane(size.z, size.y, Math.PI / 2)
+  rightWatermark.position.x = size.x / 2 + offset
+
+  // 上下
+  const topWatermark = createWatermarkPlane(size.x, size.z, 0, -Math.PI / 2)
+  topWatermark.position.y = size.y / 2 + offset
+  const bottomWatermark = createWatermarkPlane(size.x, size.z, 0, Math.PI / 2)
+  bottomWatermark.position.y = -size.y / 2 - offset
+
+  group.add(frontWatermark, backWatermark, leftWatermark, rightWatermark, topWatermark, bottomWatermark)
+
+    debugInfo.value = '水印已應用，正在設置相機和控制器...'
+
+    // 設置相機位置
     const maxDim = Math.max(size.x, size.y, size.z)
     const fov = camera.fov * (Math.PI / 180)
-    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2))
-    camera.position.z = cameraZ * 2
-    camera.lookAt(scene.position)
-
-    // 創建浮水印
-    const createWatermark = (size) => {
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  
-  // 根據模型的尺寸動態調整畫布大小
-  const canvasWidth = Math.max(size.x * 100, 512); // 最小畫布寬度為 512
-  const canvasHeight = Math.max(size.y * 100, 512); // 最小畫布高度為 512
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
-  
-  // 根據畫布大小動態設置字體大小
-  const fontSize = Math.min(Math.max(canvasWidth / 15, 24), 48);
-  context.font = `Bold ${fontSize}px Arial`;
-  context.fillStyle = 'rgba(255,255,255,0.5)';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  
-  // 設置水印的最大長度，超過此長度自動換行
-  const maxLineLength = 10;
-  const nicknameLines = [];
-  
-  // 將 nickname 分行
-  let tempLine = '';
-  for (let i = 0; i < nickname.value.length; i++) {
-    tempLine += nickname.value[i];
-    if (tempLine.length >= maxLineLength || i === nickname.value.length - 1) {
-      nicknameLines.push(tempLine);
-      tempLine = '';
-    }
-  }
-  
-  // 動態計算文字之間的間距
-  const lineSpacing = fontSize * 1.5; // 行與行之間的間距，稍微大於字體大小
-  const gridSpacingX = canvasWidth / 2; // 動態計算X軸間距，將畫布分為5等分
-  const gridSpacingY = canvasHeight / 4; // 動態計算Y軸間距，將畫布分為5等分
-
-  // 在多個位置繪製水印，形成不重疊的模式
-  for (let i = 0; i < 5; i++) {
-    for (let j = 0; j < 5; j++) {
-      nicknameLines.forEach((line, index) => {
-        // 每一行都分別繪製在不同的 y 位置，並考慮行間距
-        context.fillText(line, i * gridSpacingX, j * gridSpacingY + (index * lineSpacing));
-      });
-    }
-  }
-
-  // 將 canvas 作為紋理
-  const texture = new THREE.CanvasTexture(canvas);
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    opacity: 0.5,
-    depthTest: false,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-
-  // 創建幾何體，並根據模型大小設置浮水印平面大小
-  const geometry = new THREE.PlaneGeometry(size.x, size.y);
-  const watermarkMesh = new THREE.Mesh(geometry, material);
-
-  // 將浮水印放置在模型前面
-  watermarkMesh.position.z = size.z / 2 + 0.01;
-
-  return watermarkMesh;
-};
-
-
-
-    const watermark = createWatermark(size)
-    group.add(watermark)
+    let cameraZ = Math.abs(maxDim / Math.tan(fov / 2))
+    cameraZ *= 1.5 // 將相機稍微拉遠一些
+    camera.position.set(0, 0, cameraZ)
+    camera.lookAt(new THREE.Vector3(0, 0, 0))
 
     // 設置控制器
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -534,38 +547,23 @@ const view3dModel = async (voteId) => {
     controls.dampingFactor = 0.25
     controls.screenSpacePanning = false
     controls.maxPolarAngle = Math.PI / 2
-    controls.target.set(0, 0, 0) // 設置控制器的目標點為場景中心
+    controls.target.set(0, 0, 0)
 
-    // 改進光源設置
+    // 添加光源
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
     scene.add(ambientLight)
 
-    const hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.5)
-    scene.add(hemisphereLight)
-
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-    directionalLight.position.set(1, 1, 1)
+    directionalLight.position.set(1, 1, 1).normalize()
     scene.add(directionalLight)
 
-    const pointLight = new THREE.PointLight(0xffffff, 0.5)
-    pointLight.position.set(0, 5, 0)
-    scene.add(pointLight)
+    debugInfo.value = '場景設置完成，開始渲染...'
 
     // 渲染循環
     function animate() {
       requestAnimationFrame(animate)
       controls.update()
-      
-      // 更新浮水印位置，使其始終面向相機
-      watermark.lookAt(camera.position)
-      
       renderer.render(scene, camera)
-      // 更新相機位置狀態
-      cameraPosition.value = {
-        x: camera.position.x.toFixed(2),
-        y: camera.position.y.toFixed(2),
-        z: camera.position.z.toFixed(2)
-      }
     }
     animate()
 
@@ -576,13 +574,15 @@ const view3dModel = async (voteId) => {
       camera.updateProjectionMatrix()
       renderer.setSize(modelContainer.value.clientWidth, modelContainer.value.clientHeight)
     }
-    debugInfo.value = '3D 模型渲染完成，照明已優化'
+
+    debugInfo.value = '3D 模型渲染完成，水印已應用到所有面'
   } catch (error) {
     console.error('3D 模型處理錯誤:', error)
     modelError.value = `3D 模型預覽出現錯誤: ${error.message}`
     debugInfo.value = `錯誤詳情: ${error.stack}`
   }
 }
+
     const closeModelPreview = () => {
       viewing3dModel.value = false
       if (modelContainer.value) {
